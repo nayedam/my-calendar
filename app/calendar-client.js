@@ -116,6 +116,37 @@ export default function CalendarClient({ initialUser }) {
     loadTodos();
   }, [currentUser, supabase]);
 
+  useEffect(() => {
+    async function loadDdays() {
+      if (!currentUser) {
+        setDdays([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("ddays")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .order("target_date", { ascending: true });
+
+      if (error) {
+        setDdErr(error.message);
+        return;
+      }
+
+      setDdErr("");
+      setDdays(
+        (data || []).map((item) => ({
+          id: item.id,
+          text: item.title,
+          date: item.target_date,
+        }))
+      );
+    }
+
+    loadDdays();
+  }, [currentUser, supabase]);
+
   async function signUp() {
     if (!authEmail.trim() || !authPassword) {
       setAuthMessage("이메일과 비밀번호를 입력해주세요.");
@@ -255,7 +286,12 @@ export default function CalendarClient({ initialUser }) {
     );
   }
 
-  function addDday() {
+  async function addDday() {
+    if (!currentUser) {
+      setDdErr("먼저 로그인해주세요.");
+      return;
+    }
+
     if (!ddText.trim() || !ddDate) {
       setDdErr(
         !ddText.trim() ? "이름을 입력해주세요." : "날짜를 선택해주세요."
@@ -263,12 +299,27 @@ export default function CalendarClient({ initialUser }) {
       return;
     }
 
+    const { data, error } = await supabase
+      .from("ddays")
+      .insert({
+        user_id: currentUser.id,
+        title: ddText.trim(),
+        target_date: ddDate,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      setDdErr(error.message);
+      return;
+    }
+
     setDdays((prev) => [
       ...prev,
       {
-        id: Date.now(),
-        text: ddText.trim(),
-        date: ddDate,
+        id: data.id,
+        text: data.title,
+        date: data.target_date,
       },
     ]);
 
@@ -276,6 +327,22 @@ export default function CalendarClient({ initialUser }) {
     setDdDate("");
     setDdErr("");
     selectDate(ddDate);
+  }
+
+  async function deleteDday(id) {
+    const { error } = await supabase
+      .from("ddays")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", currentUser.id);
+
+    if (error) {
+      setDdErr(error.message);
+      return;
+    }
+
+    setDdays((prev) => prev.filter((x) => x.id !== id));
+    setDdErr("");
   }
 
   const year = currentDate.getFullYear();
@@ -581,9 +648,7 @@ export default function CalendarClient({ initialUser }) {
                       aria-label="디데이 삭제"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setDdays((prev) =>
-                          prev.filter((x) => x.id !== d.id)
-                        );
+                        deleteDday(d.id);
                       }}
                     >
                       🗑️
